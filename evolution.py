@@ -7,33 +7,6 @@ import genetics
 import cytology
 
 
-def init():
-    genomes = [
-        {
-            'genes': sorted([0]),
-            'createdTime': 0,
-            'fitness': [],
-        }
-    ]
-    genome_map = {json.dumps(k['genes']): v for v, k in enumerate(genomes)}
-
-    genes = [
-        {
-            'activators': sorted([
-                chemistry.molecule_map['atp'],
-                chemistry.molecule_map['aminoacids'],
-            ]),
-            'repressors': sorted([
-
-            ]),
-            'product': chemistry.molecule_map['cycle'],
-        }
-    ]
-    gene_map = {json.dumps(k): v for v, k in enumerate(genes)}
-
-    return genomes, genome_map, genes, gene_map
-
-
 max_population = 1024
 
 
@@ -78,7 +51,7 @@ def sample_batch(epoch, genomes, genome_map, sorted_genomes, genome_weights, gen
         new_cell = cytology.create_cell()
         new_cell['membrane'] += cell_centers[i]
         new_cell['genome'] = new_genome_id
-        new_cell['contents'][:, chemistry.molecule_map['atp']] = 30.0
-        new_cell['contents'][:, chemistry.molecule_map['aminoacids']] = 10.0
+        new_cell['contents'][:, chemistry.molecule_map['atp']] = 300.0
+        new_cell['contents'][:, chemistry.molecule_map['aminoacids']] = 100.0
         cells.append(new_cell)
     return env, cells

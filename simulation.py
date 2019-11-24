@@ -7,7 +7,8 @@ import time
 import copy
 import json
 from collections import defaultdict
-from tqdm import tqdm
+# from tqdm import tqdm
+from tqdm import tqdm_notebook as tqdm
 
 import numpy as np
 import pandas as pd
@@ -30,7 +31,7 @@ adhesion_max_dist = 0.2
 
 def find_nearby_membranes(all_membranes, all_membrane_map, vert_normals):
     # Find nearby membranes for cell-cell interactions
-    membrane_tree = scipy.spatial.KDTree(all_membranes)
+    membrane_tree = scipy.spatial.cKDTree(all_membranes)
     nearby_membranes = np.array(list(membrane_tree.query_pairs(adhesion_max_dist, p=2)))
     nearby_membrane_map = defaultdict(list)
     if nearby_membranes.shape[0] > 0:
@@ -92,9 +93,44 @@ def update_cell_membranes(cells):
             membrane_rdists
 
 
+def process_gene_expression(cell, next_cell, genes, genomes, sim_speed):
+    for gene_idx in genomes[cell['genome']]['genes']:
+        gene = genes[gene_idx]
+
+        # Don't over-produce
+        if np.min(cell['contents'][:, gene['product']]) >= 1.0:
+            continue
+
+        expression = sim_speed * 10.0
+        # Apply activator influence on expression
+        if len(gene['activators']) > 0:
+            expression *= 1e-6
+        expression += np.prod(
+            np.mean(cell['contents'][:, gene['activators']], axis=0), 
+            axis=-1
+        ) * sim_speed
+        # Apply repressor influence on expression
+        if len(gene['repressors']) > 0:
+            expression -= np.sum(
+                np.mean(cell['contents'][:, gene['repressors']], axis=0), 
+                axis=-1
+            ) * sim_speed
+        expression = np.maximum(expression, 0.0) * sim_speed
+        # Limit expression by the amount of materials and energy available
+        expression = np.minimum(expression, np.mean(cell['contents'][:, chemistry.molecule_map['aminoacids']]) / chemistry.resource_cost[gene['product']] * sim_speed)
+        expression = np.minimum(expression, np.mean(cell['contents'][:, chemistry.molecule_map['atp']]) / chemistry.resource_cost[gene['product']] * sim_speed)
+        next_cell['contents'][:, gene['product']] += expression
+        next_cell['contents'][:, chemistry.molecule_map['aminoacids']] -= expression * chemistry.resource_cost[gene['product']]
+        next_cell['contents'][:, chemistry.molecule_map['atp']] -= expression * chemistry.resource_cost[gene['product']]
+        next_cell['contents'] = np.maximum(next_cell['contents'], 0.0)
+
+
 def process_cell_reactions(cell, next_cell, sim_speed):
     # TODO: account for resource amounts becoming negative
     for reaction in chemistry.reactions:
+        # Skip reactions that do not have enough reactants
+        if np.all(np.any(cell['contents'][:, reaction['reactants']] < 1e-6, axis=-1)):
+            continue
         reaction_power = np.minimum(
             np.prod(cell['contents'][:, reaction['reactants']], axis=-1),
             np.min(cell['contents'][:, reaction['reactants']], axis=-1)
@@ -138,15 +174,24 @@ def process_cell_cell_collision(i, membrane, vert_normals, cell, next_cell, cell
         if b1[2] < b2[0] or b2[2] < b1[0] or b1[3] < b2[1] or b2[3] < b1[1]:
             intersection = None
         else:
-            intersection = membrane_polys[i].intersection(
-                membrane_polys[j])
-
-        # Pressure from overlapping cells
-        if intersection is not None and not intersection.is_empty:
+            # Pressure from overlapping cells
             intersects = matplotlib.path.Path(
                 other['membrane']).contains_points(membrane)
             next_momentum -= vert_normals[i] * 0.5 * np.expand_dims(np.minimum(
-                (intersection.area + 0.1) * intersects, 0.2 * next_cell['volume']), -1) * sim_speed
+                (0.0 + 0.1) * intersects, 0.2 * next_cell['volume']), -1) * sim_speed
+
+        # if b1[2] < b2[0] or b2[2] < b1[0] or b1[3] < b2[1] or b2[3] < b1[1]:
+        #     intersection = None
+        # else:
+        #     intersection = membrane_polys[i].intersection(
+        #         membrane_polys[j])
+
+        # # Pressure from overlapping cells
+        # if intersection is not None and not intersection.is_empty:
+        #     intersects = matplotlib.path.Path(
+        #         other['membrane']).contains_points(membrane)
+        #     next_momentum -= vert_normals[i] * 0.5 * np.expand_dims(np.minimum(
+        #         (intersection.area + 0.1) * intersects, 0.2 * next_cell['volume']), -1) * sim_speed
 
 
 def process_membrane_tension(i, membrane, vert_normals, cell, next_cell, next_static_momentum, sim_speed):
@@ -199,7 +244,7 @@ def maybe_start_cell_division(next_cell):
 
 
 def simulate(args):
-    env, cells, steps = args
+    env, cells, genes, genomes, steps = args
     env_history = [copy.deepcopy(env)]
     cell_history = [copy.deepcopy(cells)]
     sim_speed = 0.05
@@ -219,6 +264,9 @@ def simulate(args):
             
             next_cell['membrane_rest_lens'] = np.sqrt(np.ones(
                 (next_cell['membrane'].shape[0])) * next_cell['volume'] / np.pi) * 2 * np.pi / next_cell['membrane'].shape[0]
+
+            # Process gene expression
+            process_gene_expression(cell, next_cell, genes, genomes, sim_speed)
 
             # Process reactions inside the cell
             process_cell_reactions(cell, next_cell, sim_speed)
@@ -261,7 +309,7 @@ def simulate(args):
             else:
                 next_cells.append(next_cell)
         cells = next_cells
-        if step % 20 == 0:
+        if step % 10 == 0:
             env_history.append(copy.deepcopy(env))
             cell_history.append(copy.deepcopy(cells))
 
