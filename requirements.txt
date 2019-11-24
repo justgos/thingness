@@ -1,0 +1,9 @@
+tqdm
+numpy
+scipy
+shapely
+descartes
+scikit-learn
+networkx
+scikit-video
+visdom

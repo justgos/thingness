@@ -90,6 +90,7 @@ def finish_division(cell):
         c1['membrane_elasticity'] = tesselate(cyclic(c1['membrane_elasticity'])[idx])
         # Decrease content concentration, first x1/2 due to division, then x1/2 due to x2 tesselation
         c1['contents'] = tesselate(cyclic(c1['contents'])[idx]) / 2.0 * 0.5
+        c1['contents'][:, chemistry.molecule_map['cycle']] = 0.01
 
         del c1['division']
 

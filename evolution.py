@@ -17,14 +17,11 @@ def sort_genomes(genomes):
     return sorted_genomes, genome_weights
 
 
-def sample_batch(epoch, genomes, genome_map, sorted_genomes, genome_weights, genes, gene_map):
+def sample_batch(epoch, env_size, ground_level, genomes, genome_map, sorted_genomes, genome_weights, genes, gene_map):
     # Setup the environment
-    env_size = (16, 16)
     env = np.zeros((env_size[0], env_size[1], len(chemistry.molecule_map))).astype(np.float32)
-    #ground_level = env_size[1] // 3
-    ground_level = env_size[1] // 2
     # Earth starts full of nutrients
-    env[:, :ground_level, chemistry.molecule_map['aminoacids']] = 1.0
+    env[:, :ground_level, chemistry.molecule_map['aminoacids']] = np.expand_dims(np.linspace(1.0, 0.1, ground_level), axis=0)
 
     # Setup the initial cells
     batch_size = 1
