@@ -34,6 +34,7 @@ def fig2data ( fig ):
     #buf = np.roll ( buf, 3, axis = 2 )
     return buf
 
+
 def frames2web(frames, fps=60):
     """Converts NxHxWxC NumPu array into Base64-encode video, wrapped in HTML (for Visdom visualization)"""
     import skvideo.io

@@ -24,13 +24,17 @@ import networkx as nx
 import geometry
 import chemistry
 import cytology
+# import simulation_cy
 
 
+env_size = (16, 16)
+ground_level = env_size[1] // 3
+# ground_level = env_size[1] // 2
 adhesion_max_dist = 0.2
 
 
 def find_nearby_membranes(all_membranes, all_membrane_map, vert_normals):
-    # Find nearby membranes for cell-cell interactions
+    """Find nearby membrane vertices for cell-cell interactions"""
     membrane_tree = scipy.spatial.cKDTree(all_membranes)
     nearby_membranes = np.array(list(membrane_tree.query_pairs(adhesion_max_dist, p=2)))
     nearby_membrane_map = defaultdict(list)
@@ -56,6 +60,8 @@ def find_nearby_membranes(all_membranes, all_membrane_map, vert_normals):
 
 
 def update_cell_membranes(cells):
+    """Assemble auxiliary data structures for membrane-related geometry calculations.
+    Find all the neighbouring inter-cellular membrane vertices"""
     membrane_polys = [Polygon(cell['membrane']).buffer(0) for cell in cells]
     membrane_bounds = [p.bounds for p in membrane_polys]
 
@@ -93,7 +99,7 @@ def update_cell_membranes(cells):
             membrane_rdists
 
 
-def process_gene_expression(cell, next_cell, genes, genomes, sim_speed):
+def express_genes(cell, next_cell, genes, genomes, sim_speed):
     for gene_idx in genomes[cell['genome']]['genes']:
         gene = genes[gene_idx]
 
@@ -101,7 +107,7 @@ def process_gene_expression(cell, next_cell, genes, genomes, sim_speed):
         if np.min(cell['contents'][:, gene['product']]) >= 1.0:
             continue
 
-        expression = sim_speed * 10.0
+        expression = sim_speed * 2.0
         # Apply activator influence on expression
         if len(gene['activators']) > 0:
             expression *= 1e-6
@@ -127,7 +133,8 @@ def process_gene_expression(cell, next_cell, genes, genomes, sim_speed):
 
 def process_cell_reactions(cell, next_cell, sim_speed):
     # TODO: account for resource amounts becoming negative
-    for reaction in chemistry.reactions:
+    for i in range(len(chemistry.reactions)):
+        reaction = chemistry.reactions[i]
         # Skip reactions that do not have enough reactants
         if np.all(np.any(cell['contents'][:, reaction['reactants']] < 1e-6, axis=-1)):
             continue
@@ -152,7 +159,7 @@ def process_cell_reactions(cell, next_cell, sim_speed):
     next_cell['contents'] = np.maximum(next_cell['contents'], 0.0)
 
 
-def process_cell_contents_diffusion(next_cell, membrane_rdists, sim_speed):
+def diffuse_contents_inside_cell(next_cell, membrane_rdists, sim_speed):
     # TODO: non-uniform diffusion coefficients
     dcontents = np.expand_dims(
         next_cell['contents'], 1) - np.expand_dims(next_cell['contents'], 0)
@@ -164,6 +171,7 @@ def process_cell_contents_diffusion(next_cell, membrane_rdists, sim_speed):
 
 
 def process_cell_cell_collision(i, membrane, vert_normals, cell, next_cell, cells, membrane_bounds, membrane_polys, next_momentum, sim_speed):
+    """Vertices of overlapping membrane segments will get pushed apart"""
     for j, other in enumerate(cells):
         if i == j:
             continue
@@ -194,7 +202,18 @@ def process_cell_cell_collision(i, membrane, vert_normals, cell, next_cell, cell
         #         (intersection.area + 0.1) * intersects, 0.2 * next_cell['volume']), -1) * sim_speed
 
 
+def apply_gravity(i, membrane, next_momentum, sim_speed):
+    next_momentum[membrane[:, 1] > ground_level, 1] -= 0.002 * sim_speed
+
+
+def apply_earth_friction(i, membrane, vert_normals, next_momentum, sim_speed):
+    # TODO: only decay the expansion momentum
+    # TODO: scale properly with `sim_speed`
+    next_momentum[membrane[:, 1] <= ground_level] *= 0.1
+
+
 def process_membrane_tension(i, membrane, vert_normals, cell, next_cell, next_static_momentum, sim_speed):
+    """Apply momentum changes to keep membrane segment lenghts closer to their resting values"""
     membrane_tension = 0.5
     to_prev = membrane[np.arange(membrane.shape[0])-1] - membrane
     to_next = membrane[(np.arange(membrane.shape[0])+1) % membrane.shape[0]] - membrane
@@ -224,6 +243,7 @@ def process_cell_cell_adhesion(i, cell, all_membranes, nearby_membrane_map, adhe
 
 
 def advance_cell_division(membrane, cell, next_cell, next_static_momentum, sim_speed):
+    """Pull the cleavage furrow vertices closer"""
     if 'division' in cell:
         vec = membrane[cell['division']['between'][1]] - \
             membrane[cell['division']['between'][0]]
@@ -237,7 +257,7 @@ def advance_cell_division(membrane, cell, next_cell, next_static_momentum, sim_s
 
 def maybe_start_cell_division(next_cell):
     # Starts when the concentration of 'cycle' proxy molecule reaches the threshold
-    division_start_cycle_threshold = 0.5
+    division_start_cycle_threshold = 0.9
     if 'division' not in next_cell:
         if np.mean(next_cell['contents'][:, chemistry.molecule_map['cycle']]) >= division_start_cycle_threshold:
             cytology.start_division(next_cell)
@@ -247,7 +267,7 @@ def simulate(args):
     env, cells, genes, genomes, steps = args
     env_history = [copy.deepcopy(env)]
     cell_history = [copy.deepcopy(cells)]
-    sim_speed = 0.05
+    sim_speed = np.float32(0.05)
     for step in tqdm(np.arange(steps)):
         next_cells = []
 
@@ -258,26 +278,35 @@ def simulate(args):
 
         for i, cell in enumerate(cells):
             next_cell = copy.deepcopy(cell)
-            next_cell['volume'] += 0.01
             membrane = cell['membrane']
 
-            
             next_cell['membrane_rest_lens'] = np.sqrt(np.ones(
                 (next_cell['membrane'].shape[0])) * next_cell['volume'] / np.pi) * 2 * np.pi / next_cell['membrane'].shape[0]
 
             # Process gene expression
-            process_gene_expression(cell, next_cell, genes, genomes, sim_speed)
+            express_genes(cell, next_cell, genes, genomes, sim_speed)
 
             # Process reactions inside the cell
             process_cell_reactions(cell, next_cell, sim_speed)
+            # r_reactants = list(map(lambda x: x['reactants'], chemistry.reactions))
+            # r_products = list(map(lambda x: x['products'], chemistry.reactions))
+            # r_rates = list(map(lambda x: np.float32(x['rate']), chemistry.reactions))
+            # r_energy_costs = list(map(lambda x: np.float32(x['energy_cost']), chemistry.reactions))
+            # # next_cell['contents'] = process_cell_reactions(cell['contents'], next_cell['contents'], r_reactants, r_products, r_rates, r_energy_costs, chemistry.molecule_map_typed, sim_speed)
+            # next_cell['contents'] = simulation_cy.process_cell_reactions(cell['contents'].astype(np.float32), next_cell['contents'].astype(np.float32), r_reactants, r_products, r_rates, r_energy_costs, sim_speed)
 
             # Contents diffusion
-            process_cell_contents_diffusion(next_cell, membrane_rdists[i], sim_speed)
+            diffuse_contents_inside_cell(next_cell, membrane_rdists[i], sim_speed)
 
-            # Cell-cell collision
+            # Environmental forces
+            # TODO: `momentum_decay` should scale properly with `sim_speed`
             momentum_decay = 0.8
             next_momentum = np.copy(cell['membrane_momentum']) * momentum_decay
             next_static_momentum = np.zeros(next_momentum.shape)
+            apply_gravity(i, membrane, next_momentum, sim_speed)
+            apply_earth_friction(i, membrane, vert_normals, next_momentum, sim_speed)
+
+            # Cell-cell collision
             process_cell_cell_collision(i, membrane, vert_normals, cell, next_cell, cells, membrane_bounds, membrane_polys, next_momentum, sim_speed)
 
             # Membrane tension
@@ -294,6 +323,9 @@ def simulate(args):
             next_momentum += next_static_momentum
             next_momentum = np.clip(next_momentum, -0.1, 0.1)
             next_membrane = membrane + next_momentum
+
+            # The cell grows as the cycle advances
+            next_cell['volume'] += 2.0 * (np.mean(next_cell['contents'][:, chemistry.molecule_map['cycle']]) - np.mean(cell['contents'][:, chemistry.molecule_map['cycle']]))
 
             # Division
             maybe_start_cell_division(next_cell)
