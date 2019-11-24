@@ -10,6 +10,33 @@ import numpy as np
 import chemistry
 
 
+def init():
+    genes = [
+        {
+            'activators': sorted([
+                # chemistry.molecule_map['atp'],
+                # chemistry.molecule_map['aminoacids'],
+            ]),
+            'repressors': sorted([
+
+            ]),
+            'product': chemistry.molecule_map['cycle'],
+        }
+    ]
+    gene_map = {json.dumps(k): v for v, k in enumerate(genes)}
+
+    genomes = [
+        {
+            'genes': sorted([0]),
+            'createdTime': 0,
+            'fitness': [],
+        }
+    ]
+    genome_map = {json.dumps(k['genes']): v for v, k in enumerate(genomes)}
+
+    return genes, gene_map, genomes, genome_map
+
+
 def sample_indices(a, p):
     if len(a) > 0:
         n = np.random.binomial(len(a), p)
