@@ -36,7 +36,7 @@ def show_frame(cells, env,):
 
     # env_img = np.zeros((env.shape[0], env.shape[1], 3))
     # env_img[env[:, :, chemistry.molecule_map['aminoacids']] == 0] = 1.0
-    env_img = lerp(hex2rgb('#402a15'), hex2rgb('#e47711'), 
+    env_img = lerp(hex2rgb('#587418'), hex2rgb('#a1d32d'), 
         np.minimum(env[:, :, chemistry.molecule_map['aminoacids']:chemistry.molecule_map['aminoacids']+1], 1.0))
     env_img[env[:, :, chemistry.molecule_map['aminoacids']] == 0] = 1.0
     ax.imshow(env_img.transpose((1, 0, 2)), interpolation='bilinear', origin='lower')  # , extent=(50-0.5, (env.shape[0] - 50)-0.5, 50-0.5, (env.shape[1] - 50)-0.5)
