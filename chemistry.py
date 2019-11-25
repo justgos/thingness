@@ -2,7 +2,6 @@ import numpy as np
 
 # Setup core molecule types
 molecule_types = [
-    'water',
     'atp',
     'aminoacids',
     'cycle',  # Proxy for cell division initiation

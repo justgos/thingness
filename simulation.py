@@ -161,12 +161,9 @@ def process_cell_reactions(cell, next_cell, sim_speed):
 
 def diffuse_contents_inside_cell(next_cell, membrane_rdists, sim_speed):
     # TODO: non-uniform diffusion coefficients
-    dcontents = np.expand_dims(
-        next_cell['contents'], 1) - np.expand_dims(next_cell['contents'], 0)
+    dcontents = np.expand_dims(next_cell['contents'], 1) - np.expand_dims(next_cell['contents'], 0)
 #       contents_diffusion = membrane_rdists.dot(next_cell['contents']) * 0.1 * sim_speed
-#       print(dcontents)
     contents_diffusion = -np.sum(np.expand_dims(membrane_rdists, -1) * dcontents, axis=1) * 0.05 * sim_speed
-#       print(contents_diffusion)
     next_cell['contents'] += contents_diffusion
 
 
